@@ -1,24 +1,25 @@
 import streamlit as st
-import pickle
 import pandas as pd
 import numpy as np
+import pickle
+from sklearn.preprocessing import StandardScaler
 
-# Load the .pkl files
+# Load the saved model, scaler, and label encoder
 with open("best_model.pkl", "rb") as model_file:
-    best_model_name = pickle.load(model_file)
+    best_model = pickle.load(model_file)
 
 with open("scaler.pkl", "rb") as scaler_file:
     scaler = pickle.load(scaler_file)
 
-with open("labelencoder.pkl", "rb") as le_file:
-    label_encoder = pickle.load(le_file)
+with open("labelencoder.pkl", "rb") as label_encoder_file:
+    label_encoder = pickle.load(label_encoder_file)
 
-# Streamlit app
+# Streamlit app UI
 def main():
     st.title("Pancreatic Cancer Prediction App")
     st.write("Provide the input data for prediction")
 
-    # User input fields
+    # Input fields for user
     sample_origin = st.selectbox("Sample Origin", ["Blood", "Tissue", "Other"])  # Adjust categories
     age = st.number_input("Age", min_value=0, step=1)
     sex = st.selectbox("Sex", ["M", "F"])
@@ -31,12 +32,12 @@ def main():
     TFF1 = st.number_input("TFF1", step=0.01)
     REG1A = st.number_input("REG1A", step=0.01)
 
-    # Prepare input data
+    # Prepare input data for prediction
     if st.button("Predict"):
         try:
-            # Create DataFrame
+            # Create a DataFrame from user input
             input_data = pd.DataFrame({
-                "sample_origin": [sample_origin],
+                "sampleBPTBorigin": [sample_origin],
                 "age": [age],
                 "sex": [sex],
                 "stage": [stage],
@@ -49,19 +50,31 @@ def main():
                 "REG1A": [REG1A],
             })
 
-            # Encode categorical variables (Ensure it matches training)
-            input_data["sex"] = label_encoder.transform(input_data["sex"])
+            # Handle unseen labels: map them to "Unknown"
+            input_data["sex"] = handle_unseen_labels(input_data["sex"], label_encoder)
+            input_data["sampleBPTBorigin"] = handle_unseen_labels(input_data["sampleBPTBorigin"], label_encoder)
+            input_data["stage"] = handle_unseen_labels(input_data["stage"], label_encoder)
+            input_data["benign_sample_diagnosis"] = handle_unseen_labels(input_data["benign_sample_diagnosis"], label_encoder)
 
-            # Scale numerical features
-            numerical_features = ["age", "plasma_CA19_9", "creatinine", "LYVE1", "REG1B", "TFF1", "REG1A"]
-            input_data[numerical_features] = scaler.transform(input_data[numerical_features])
+            # Standardize the input data using the saved scaler
+            input_data_scaled = scaler.transform(input_data)
 
-            # Predict
-            prediction = best_model_name.predict(input_data)
+            # Make a prediction using the best model
+            prediction = best_model.predict(input_data_scaled)
 
-            st.success(f"Prediction: {prediction[0]}")
+            # Display the prediction result
+            st.success(f"Prediction: {'Cancer' if prediction[0] == 1 else 'No Cancer'}")
         except Exception as e:
             st.error(f"An error occurred: {e}")
+
+def handle_unseen_labels(column, encoder):
+    """
+    This function handles unseen labels by replacing them with 'Unknown'
+    and encoding them using the label encoder.
+    """
+    # Add 'Unknown' category if it's not already present
+    encoder.classes_ = np.append(encoder.classes_, "Unknown")  # Ensure 'Unknown' is part of classes_
+    return encoder.transform(column.apply(lambda x: x if x in encoder.classes_ else "Unknown"))
 
 if __name__ == "__main__":
     main()
